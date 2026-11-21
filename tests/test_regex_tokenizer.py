@@ -50,3 +50,24 @@ def test_merges_never_cross_chunks():
     tok.train("ab ab ab ab", vocab_size=270)
     for token in tok.vocab.values():
         assert b" " not in token[1:]  # a space may only lead a token
+
+
+def test_save_load_round_trip(tmp_path):
+    text = "the cat sat on the mat. " * 50 + "naïve 🌍"
+    tok = RegexTokenizer()
+    tok.train(text, vocab_size=300)
+    path = tmp_path / "tok.json"
+    tok.save(path)
+    loaded = RegexTokenizer.load(path)
+    assert loaded.vocab == tok.vocab
+    assert loaded.pattern == tok.pattern
+    assert loaded.encode(text) == tok.encode(text)
+
+
+def test_save_load_preserves_gpt2_parity(gpt2, tmp_path):
+    ours, ref = gpt2
+    path = tmp_path / "gpt2.json"
+    ours.save(path)
+    loaded = RegexTokenizer.load(path)
+    text = "Hello, World! It's 2026 and we're tokenizing. 日本語 🌍"
+    assert loaded.encode(text) == ref.encode_ordinary(text)
