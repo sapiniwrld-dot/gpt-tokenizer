@@ -10,11 +10,12 @@ Measured on Tiny Shakespeare (1.1 MB), MacBook Air (Apple silicon), single threa
 
 | Encoding      | tiktoken | This repo (Rust) | This repo (Python) | Exact match |
 |---------------|---------:|-----------------:|-------------------:|:-----------:|
-| `gpt2`        | 19.3 MB/s | 13.7 MB/s (1.4x) | 2.1 MB/s (9.4x)  | yes |
-| `cl100k_base` | 20.1 MB/s | 15.2 MB/s (1.3x) | 2.1 MB/s (9.6x)  | yes |
-| `o200k_base`  | 29.1 MB/s |  9.1 MB/s (3.2x) | 2.0 MB/s (14.8x) | yes |
+| `gpt2`        | 18.5 MB/s | 33.5 MB/s (0.6x) | 1.8 MB/s (10.0x) | yes |
+| `cl100k_base` | 18.8 MB/s | 38.6 MB/s (0.5x) | 2.0 MB/s (9.4x)  | yes |
+| `o200k_base`  | 29.8 MB/s | 36.5 MB/s (0.8x) | 2.0 MB/s (15.2x) | yes |
 
-Times in parentheses are relative to tiktoken (lower is better).
+Times in parentheses are relative to tiktoken (lower is better). The Rust path beats tiktoken
+because it splits text with the linear-time `regex` crate instead of a backtracking engine (see below).
 
 Training your own vocabulary on 90% of the corpus, compression on the held-out 10%:
 
@@ -32,8 +33,12 @@ Training your own vocabulary on 90% of the corpus, compression on the held-out 1
 - **Special tokens:** tiktoken-compatible semantics. `encode()` raises if the text contains a special
   token, `allowed_special="all"` (or a set) enables them, and `encode_ordinary()` treats them as text.
 - **Rust core:** regex split and BPE merging in Rust via PyO3. Releases the GIL while encoding.
+- **Lookahead-free split:** GPT patterns need a backtracking regex engine only for the
+  `\s+(?!\S)` lookahead. The Rust core swaps it for `\s+` and emulates the lookahead in code,
+  which lets it use the linear-time `regex` crate. Output stays token-for-token identical.
+  Other patterns fall back to `fancy-regex`.
 - **Save and load:** tokenizers serialize to JSON.
-- **67 tests**, including parity tests against tiktoken on all three encodings.
+- **149 tests**, including parity tests against tiktoken on all three encodings.
 
 ## Quick start
 
@@ -48,8 +53,12 @@ curl -L -o data/tinyshakespeare.txt \
   https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
 uv run python scripts/benchmark.py data/tinyshakespeare.txt
 uv run python scripts/train.py data/tinyshakespeare.txt
+```
 
-from gpt_tokenizer.fast import FastTokenizer
+### Python API
+
+```python
+from gpt_tokenizer import FastTokenizer
 
 tok = FastTokenizer.from_tiktoken("cl100k_base")
 ids = tok.encode("hello world<|endoftext|>", allowed_special="all")
@@ -58,8 +67,17 @@ assert tok.decode(ids) == "hello world<|endoftext|>"
 custom = FastTokenizer()
 custom.train(open("data/tinyshakespeare.txt").read(), vocab_size=1024)
 custom.save("models/shakespeare-1024.json")
+```
 
-How it works
+### CLI
+
+```bash
+uv run gpt-tokenizer encode "hello world" --encoding cl100k_base
+uv run gpt-tokenizer decode 15339 1917 --encoding cl100k_base
+uv run gpt-tokenizer count "hello world" --encoding cl100k_base
+```
+
+## How it works
 
 1. Pre-split: a regex cuts text into chunks (words with their leading space, numbers,
    punctuation, whitespace runs).
@@ -69,7 +87,7 @@ How it works
    lowest rank (the earliest-learned merge), until no pair is in the vocabulary.
 4. Decode: concatenate each token's bytes and decode as UTF-8.
 
-Design notes
+## Design notes
 
 - Rank-based encoding. Storing the vocabulary as bytes -> rank (the tiktoken format)
   handles GPT-2's shuffled single-byte IDs with no special cases.
@@ -80,7 +98,7 @@ Design notes
 - Lazy Rust core. FastTokenizer rebuilds the Rust core whenever its ranks are replaced, so
   training, loading and from_tiktoken stay correct.
 
-Project layout
+## Project layout
 
 src/gpt_tokenizer/bpe.py              BasicTokenizer: raw-byte BPE, no pre-split
 src/gpt_tokenizer/regex_tokenizer.py  RegexTokenizer: pre-split, special tokens, save/load, tiktoken loading

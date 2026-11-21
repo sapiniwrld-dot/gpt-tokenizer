@@ -20,6 +20,8 @@ def test_fast_matches_tiktoken(pair, text):
     fast, ref = pair
     assert fast.encode(text) == ref.encode_ordinary(text)
     assert fast.decode(fast.encode(text)) == text
+    assert fast.decode_bytes(fast.encode(text)) == text.encode("utf-8")
+    assert fast.n_vocab == ref.n_vocab
 
 
 def test_fast_matches_tiktoken_on_source_files(pair):
@@ -52,3 +54,50 @@ def test_fast_core_rebuilds_after_retrain():
     after = fast.encode("aaaa")
     assert before == [97, 97, 97, 97]
     assert len(after) < len(before)
+
+
+def test_fast_save_load_preserves_fast_path(tmp_path):
+    fast = FastTokenizer.from_tiktoken("gpt2")
+    path = tmp_path / "gpt2_fast.json"
+    fast.save(path)
+    loaded = FastTokenizer.load(path)
+    assert isinstance(loaded, FastTokenizer)
+    assert loaded._get_core().uses_fast_regex
+    text = "Hello, World! It's 2026 and we're tokenizing. 日本語 🌍"
+    assert loaded.encode(text) == fast.encode(text)
+
+
+# Whitespace runs exercise the emulated `\s+(?!\S)` lookahead in the fast regex path.
+WHITESPACE_CASES = [
+    " ", "  ", "a  b", "a   b", "a \n b", "a\n\nb", "a \n\n  b", "a\r\n  b", "\n", "\n\n",
+    "  \n", "x  ", "x\t\tY", "　　a", "a  b", " \n \n x", "1  2", "!!  ??",
+    "\t\n\t\nfoo", "a \r \r b", "end   ",
+]
+
+
+@pytest.mark.parametrize("text", WHITESPACE_CASES)
+def test_fast_whitespace_matches_tiktoken(pair, text):
+    fast, ref = pair
+    assert fast.encode_ordinary(text) == ref.encode_ordinary(text)
+
+
+def test_fast_whitespace_fuzz_matches_tiktoken(pair):
+    import random
+
+    fast, ref = pair
+    rng = random.Random(0)
+    alphabet = [" ", "  ", "\n", "\r\n", "\t", "　", "a", "Bc", "1", "'s", "!", "é", "/"]
+    for _ in range(2000):
+        text = "".join(rng.choice(alphabet) for _ in range(rng.randint(1, 12)))
+        assert fast.encode_ordinary(text) == ref.encode_ordinary(text), repr(text)
+
+
+@pytest.mark.parametrize("name", ENCODINGS)
+def test_fast_uses_lookahead_free_regex_for_tiktoken_patterns(name):
+    assert FastTokenizer.from_tiktoken(name)._get_core().uses_fast_regex
+
+
+def test_fast_falls_back_for_unsupported_patterns():
+    tok = FastTokenizer(pattern=r"(?<=a)b|.")
+    assert not tok._get_core().uses_fast_regex
+    assert tok.encode_ordinary("ab") == [97, 98]
