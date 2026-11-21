@@ -1,7 +1,7 @@
 [project]
 name = "gpt-tokenizer"
 version = "0.1.0"
-description = "Add your description here"
+description = "Byte-level BPE tokenizer from scratch with a Rust core and exact tiktoken parity"
 readme = "README.md"
 authors = [
     { name = "sapiniwrld-dot", email = "sapiniwrld@gmail.com" }
