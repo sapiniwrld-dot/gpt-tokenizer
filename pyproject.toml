@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "gpt-tokenizer-rs",
     "regex>=2026.11.19",
     "tiktoken>=0.14.0",
 ]
@@ -23,3 +24,11 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.2.0",
 ]
+
+[tool.uv.workspace]
+members = [
+    "rust",
+]
+
+[tool.uv.sources]
+gpt-tokenizer-rs = { workspace = true }

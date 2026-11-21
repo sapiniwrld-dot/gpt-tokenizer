@@ -2,6 +2,12 @@ version = 1
 revision = 5
 requires-python = ">=3.12"
 
+[manifest]
+members = [
+    "gpt-tokenizer",
+    "gpt-tokenizer-rs",
+]
+
 [[package]]
 name = "certifi"
 version = "2026.11.20"
@@ -156,6 +162,7 @@ name = "gpt-tokenizer"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "gpt-tokenizer-rs" },
     { name = "regex" },
     { name = "tiktoken" },
 ]
@@ -167,12 +174,18 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "gpt-tokenizer-rs", editable = "rust" },
     { name = "regex", specifier = ">=2026.11.19" },
     { name = "tiktoken", specifier = ">=0.14.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.2.0" }]
+
+[[package]]
+name = "gpt-tokenizer-rs"
+version = "0.1.0"
+source = { editable = "rust" }
 
 [[package]]
 name = "idna"

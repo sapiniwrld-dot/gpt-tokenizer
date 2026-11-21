@@ -5,16 +5,20 @@ import time
 
 import tiktoken
 
+from gpt_tokenizer.fast import FastTokenizer
 from gpt_tokenizer.regex_tokenizer import RegexTokenizer
 
 ENCODINGS = ["gpt2", "cl100k_base", "o200k_base"]
 
 
-def first_mismatch(a, b):
-    for i, (x, y) in enumerate(zip(a, b)):
-        if x != y:
-            return i
-    return min(len(a), len(b))
+def timed(fn, text, repeats=3):
+    """Best-of-N wall time, so one-off noise does not skew the result."""
+    best, ids = float("inf"), None
+    for _ in range(repeats):
+        t0 = time.perf_counter()
+        ids = fn(text)
+        best = min(best, time.perf_counter() - t0)
+    return ids, best
 
 
 def main():
@@ -22,28 +26,21 @@ def main():
     text = path.read_text(encoding="utf-8")
     n_bytes = len(text.encode("utf-8"))
     print(f"corpus: {path.name}, {len(text):,} chars, {n_bytes:,} bytes\n")
+    print(f"{'encoding':12} {'impl':10} {'time':>8} {'MB/s':>7} {'vs tiktoken':>12}  match")
 
     for name in ENCODINGS:
         ref = tiktoken.get_encoding(name)
-        ours = RegexTokenizer.from_tiktoken(name)
-
-        t0 = time.perf_counter()
-        ref_ids = ref.encode_ordinary(text)
-        t_ref = time.perf_counter() - t0
-
-        t0 = time.perf_counter()
-        our_ids = ours.encode(text)
-        t_ours = time.perf_counter() - t0
-
-        match = our_ids == ref_ids
-        round_trip = ours.decode(our_ids) == text
-        print(f"{name:12} tokens={len(ref_ids):>9,}  bytes/token={n_bytes / len(ref_ids):.2f}  "
-              f"match={match}  round_trip={round_trip}")
-        print(f"{'':12} ours={t_ours:.2f}s  tiktoken={t_ref:.3f}s  "
-              f"slowdown={t_ours / t_ref:.0f}x  ours={n_bytes / t_ours / 1e6:.2f} MB/s")
-        if not match:
-            i = first_mismatch(our_ids, ref_ids)
-            print(f"{'':12} first mismatch at token {i}: ours={our_ids[i:i+5]} ref={ref_ids[i:i+5]}")
+        ref_ids, t_ref = timed(ref.encode_ordinary, text)
+        impls = [
+            ("python", RegexTokenizer.from_tiktoken(name)),
+            ("rust", FastTokenizer.from_tiktoken(name)),
+        ]
+        print(f"{name:12} {'tiktoken':10} {t_ref:7.3f}s {n_bytes / t_ref / 1e6:7.1f} {'1.0x':>12}")
+        for label, tok in impls:
+            tok.encode_ordinary(text[:1000])  # warm up (builds the Rust core once)
+            ids, t = timed(tok.encode_ordinary, text, repeats=1 if label == "python" else 3)
+            match = ids == ref_ids and tok.decode(ids) == text
+            print(f"{'':12} {label:10} {t:7.3f}s {n_bytes / t / 1e6:7.1f} {t / t_ref:11.1f}x  {match}")
         print()
 
 

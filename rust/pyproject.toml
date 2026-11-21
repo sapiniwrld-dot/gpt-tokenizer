@@ -1,0 +1,9 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "gpt-tokenizer-rs"
+version = "0.1.0"
+description = "Rust core for gpt-tokenizer: regex split + byte-level BPE"
+requires-python = ">=3.12"
